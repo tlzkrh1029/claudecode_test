@@ -1,5 +1,12 @@
 # NVT Signal 역추적 결과
 
+## 확인된 사실 (차트 레이아웃에서 직접 확인)
+
+- 두 번째 열 지표는 gliderfund가 게시한 보호 스크립트 **"NVT (original) - Network Value to Transactions"**(tradingview.com/script/50VFVta2)의 **버전 1**입니다. 스크립트 ID는 `PUB;mGO6NQAZK4oHjEzHPwWWWTIYWDGJkBQF`이며, 네 번째 열은 같은 스크립트의 버전 2(2024-11-05)입니다.
+- 차트에 저장된 입력값은 `Transaction Period = 90`, `Force Daily View across all Time Frames = false`(기본값은 true), `Length Signal = 13`, `Manual Above/Below Value Levels = false`입니다.
+- `Force Daily View`를 끈 상태이므로 이동평균이 차트 봉 기준으로 계산되고, 그래서 시간 단위마다 기준선이 달라집니다.
+- 입력값 이름, 플롯 구성, 색상 팔레트는 공개 메타데이터와 일치하게 재구성했습니다. 소스 코드 자체는 암호화되어 있어서, 계산식과 자동 기준선 규칙은 여전히 추론입니다.
+
 ## 결론
 
 두 번째 열 지표는 aamonkey 코드에서 `/ 4`를 제거한 고전적인 NVT Signal일 가능성이 가장 높습니다.

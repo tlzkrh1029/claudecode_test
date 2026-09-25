@@ -1,49 +1,87 @@
 //@version=6
 //
-// NVT Signal - reconstruction of the closed-source "NVT Signal" indicator
-// NVTS = Market cap / SMA(daily on-chain transaction volume in USD, N chart bars)
+// Reconstruction of gliderfund's protected "NVT (original) - Network Value to Transactions"
+// (tradingview.com/script/50VFVta2, pine id PUB;mGO6NQAZK4oHjEzHPwWWWTIYWDGJkBQF, version 1).
 //
-// Same data feeds as aamonkey's "NVT Dynamic Colored with Signals".
-// With N = 90 (aamonkey's default "MA Volume"), this line = 4 x aamonkey's nvt on every bar,
-// because aamonkey divides the same ratio by 4.
+// Taken from the script's public metaInfo (exact): input names/defaults/order, plot titles and order,
+// the two fills, the colour palettes (lime/red/aqua/#474747 line, red/green backgrounds, label colours).
+// Inferred (the source itself is encrypted): the NVT formula, the data feeds, the automatic
+// per-timeframe levels, the cap lines' values, the cross direction and the label text.
 //
-// N = 90 is the classic value but is not confirmed for the original script.
-// Check the original's Settings > Inputs (visible even for protected scripts) and set N to match.
+// NVT = market cap / SMA(estimated on-chain tx volume in USD, Transaction Period)
 //
-indicator("NVT Signal (reconstructed)", shorttitle = "NVTS", overlay = false, precision = 2)
+indicator("NVT - Network Value to Transactions", shorttitle = "NVT", overlay = false, precision = 2)
 
-//Get the data (symbols are inputs so a replacement feed can be typed in if QUANDL stops working)
-volSymbol = input.symbol("QUANDL:BCHAIN/ETRVU", "Tx volume (USD) symbol")
-mcSymbol  = input.symbol("QUANDL:BCHAIN/MKTCP", "Market cap (USD) symbol")
-transactionVolume = request.security(volSymbol, "D", close)
-marketCap         = request.security(mcSymbol, "D", close)
+//Inputs (same names, defaults and order as the original)
+nightMode    = input.bool(false, "Night Mode")
+showNvt      = input.bool(true,  "Show NVT Line")
+txPeriod     = input.int(90,     "Transaction Period", minval = 1)
+forceDaily   = input.bool(true,  "Force Daily View across all Time Frames")
+showSignal   = input.bool(true,  "Show Signal Line")
+signalLen    = input.int(13,     "Length Signal", minval = 1)
+showCrosses  = input.bool(false, "Show Crosses")
+hiTop        = input.bool(true,  "Highlight Top Areas")
+hiBottom     = input.bool(true,  "Highlight Bottom Areas")
+hiAboveBg    = input.bool(true,  "Highlight Above-Value Background")
+hiBelowBg    = input.bool(true,  "Highlight Below-Value Background")
+manualLevels = input.bool(false, "Manual Above/Below Value Levels")
+manualAbove  = input.int(150,    "Manual Above-Value Level")
+manualBelow  = input.int(45,     "Manual Below-Value Level")
+showLabels   = input.bool(false, "Show Labels")
 
-//NVT Signal
-maLen = input.int(90, "Transaction MA length (chart bars)", minval = 1)
-nvts = marketCap / ta.sma(transactionVolume, maLen)
+//Data (Quandl feeds used by the original until 2023; replace if they stop resolving)
+volSymbol = "QUANDL:BCHAIN/ETRVU"
+mcSymbol  = "QUANDL:BCHAIN/MKTCP"
 
-//Levels per timeframe class
-// daily class   (1D..5D, timeframe.isdaily)   : 45 / 150
-// weekly class  (1W, 2W.., timeframe.isweekly) : 100 / 450
-// monthly class (1M, 3M.., timeframe.ismonthly): 333 / 1000
-// intraday falls through to the daily levels (not observed on the original)
-osD = input.float(45.0,   "Oversold - daily class",    group = "Levels")
-obD = input.float(150.0,  "Overbought - daily class",  group = "Levels")
-osW = input.float(100.0,  "Oversold - weekly class",   group = "Levels")
-obW = input.float(450.0,  "Overbought - weekly class", group = "Levels")
-osM = input.float(333.0,  "Oversold - monthly class",  group = "Levels")
-obM = input.float(1000.0, "Overbought - monthly class", group = "Levels")
+nvtCalc() =>
+    vol = request.security(volSymbol, "D", close)
+    mc  = request.security(mcSymbol, "D", close)
+    mc / ta.sma(vol, txPeriod)
 
-osLevel = timeframe.ismonthly ? osM : timeframe.isweekly ? osW : osD
-obLevel = timeframe.ismonthly ? obM : timeframe.isweekly ? obW : obD
+// Force Daily: the daily NVT on every timeframe. Off: the average runs over chart bars (90 weeks on 1W, 90 months on 1M).
+nvtDaily = request.security(syminfo.tickerid, "D", nvtCalc())
+nvtChart = nvtCalc()
+nvt = forceDaily ? nvtDaily : nvtChart
 
-//Plot
-// hline() only accepts a constant/input price, so timeframe-dependent levels are drawn with plot().
-plot(obLevel, "Overbought", color = color.red,   linewidth = 1, style = plot.style_stepline)
-plot(osLevel, "Oversold",   color = color.green, linewidth = 1, style = plot.style_stepline)
-nvtsColor = nvts < osLevel ? color.green : nvts > obLevel ? color.red : color.black
-plot(nvts, "NVTS", color = nvtsColor, linewidth = 2)
+//Levels: automatic per timeframe class, or manual
+autoAbove = timeframe.ismonthly ? 1000.0 : timeframe.isweekly ? 450.0 : 150.0
+autoBelow = timeframe.ismonthly ? 333.0  : timeframe.isweekly ? 100.0 : 45.0
+useAuto   = not manualLevels and not forceDaily
+aboveLevel = manualLevels ? float(manualAbove) : useAuto ? autoAbove : 150.0
+belowLevel = manualLevels ? float(manualBelow) : useAuto ? autoBelow : 45.0
+
+isAbove = nvt > aboveLevel
+isBelow = nvt < belowLevel
+
+//Background areas between invisible level lines and cap lines
+pAbove  = plot(aboveLevel, "Above-Value Line", color = color.new(#808080, 100))
+pTopCap = plot(math.max(nvt, aboveLevel), "Top Capped Line", color = color.new(#808080, 100))
+pBelow  = plot(belowLevel, "Below-Value Line", color = color.new(#808080, 100))
+pZero   = plot(math.min(nvt, belowLevel), "Zero Capped Line", color = color.new(#808080, 100))
+fill(pAbove, pTopCap, color = hiAboveBg and isAbove ? color.new(#FF0000, 90) : color.new(#FFFFFF, 100), title = "Above-Value Background")
+fill(pBelow, pZero,   color = hiBelowBg and isBelow ? color.new(#008000, 90) : color.new(#FFFFFF, 100), title = "Below-Value Background")
+
+//NVT line: lime in the bottom area, red in the top area, dark grey (aqua in night mode) in between
+neutral  = nightMode ? #00FFFF : #474747
+nvtColor = hiBottom and isBelow ? #00FF00 : hiTop and isAbove ? #FF0000 : neutral
+plot(showNvt ? nvt : na, "NVT", color = nvtColor, linewidth = 3)
+
+//Label on the last bar
+labelText = nightMode ? #000000 : #FFFFFF
+plotshape(showLabels and barstate.islast ? nvt : na, "Shapes", style = shape.labelup, location = location.absolute,
+     color = neutral, textcolor = labelText, text = "NVT")
+
+//Signal line and crosses
+signal = ta.ema(nvt, signalLen)
+plot(showSignal ? signal : na, "Signal", color = #FF7F00)
+bullCross = ta.crossover(nvt, signal)
+bearCross = ta.crossunder(nvt, signal)
+plot(showCrosses and bullCross ? nvt : na, "Bullish Cross", color = color.new(#474747, 10), linewidth = 4, style = plot.style_circles)
+plot(showCrosses and bearCross ? nvt : na, "Bearish Cross", color = color.new(#474747, 50), linewidth = 4, style = plot.style_circles)
 
 //Alerts
-alertcondition(ta.crossunder(nvts, osLevel), "NVTS entered oversold",   "NVTS crossed below the oversold level")
-alertcondition(ta.crossover(nvts, obLevel),  "NVTS entered overbought", "NVTS crossed above the overbought level")
+alertcondition(bullCross or bearCross, "Signal Line Cross", "NVT crossed its signal line")
+alertcondition(bullCross, "Bullish Signal Line Cross", "NVT crossed above its signal line")
+alertcondition(bearCross, "Bearish Signal Line Cross", "NVT crossed below its signal line")
+alertcondition(ta.crossover(nvt, aboveLevel), "OverBought", "NVT entered the above-value area")
+alertcondition(ta.crossunder(nvt, belowLevel), "OverSold", "NVT entered the below-value area")
