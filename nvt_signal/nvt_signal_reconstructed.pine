@@ -1,0 +1,49 @@
+//@version=4
+//
+// NVT Signal - reconstruction of the closed-source "NVT Signal" indicator
+// NVTS = Market cap / SMA(daily on-chain transaction volume in USD, N chart bars)
+//
+// Same data feeds and call style as aamonkey's "NVT Dynamic Colored with Signals".
+// With N = 90 (aamonkey's default "MA Volume"), this line = 4 x aamonkey's nvt on every bar,
+// because aamonkey divides the same ratio by 4.
+//
+// N = 90 is the classic value but is not confirmed for the original script.
+// Check the original's Settings > Inputs (visible even for protected scripts) and set N to match.
+//
+study("NVT Signal (reconstructed)", shorttitle="NVTS", overlay=false, precision=2)
+
+//Get the data (symbols are inputs so a replacement feed can be typed in if QUANDL stops working)
+qu_transactionVolume = input("QUANDL:BCHAIN/ETRVU", title="Tx volume (USD) symbol", type=input.string)
+qu_marketCap = input("QUANDL:BCHAIN/MKTCP", title="Market cap (USD) symbol", type=input.string)
+transactionVolume = security(qu_transactionVolume, 'D', close[0])
+marketCap = security(qu_marketCap, 'D', close[0])
+
+//NVT Signal
+inputLen = input(90, title="Transaction MA length (chart bars)", type=input.integer, minval=1)
+nvts = marketCap / sma(transactionVolume, inputLen)
+
+//Levels per timeframe class
+// daily class   (1D..5D, timeframe.isdaily)   : 45 / 150
+// weekly class  (1W, 2W.., timeframe.isweekly) : 100 / 450
+// monthly class (1M, 3M.., timeframe.ismonthly): 333 / 1000
+// intraday falls through to the daily levels (not observed on the original)
+osD = input(45.0, title="Oversold - daily class", type=input.float)
+obD = input(150.0, title="Overbought - daily class", type=input.float)
+osW = input(100.0, title="Oversold - weekly class", type=input.float)
+obW = input(450.0, title="Overbought - weekly class", type=input.float)
+osM = input(333.0, title="Oversold - monthly class", type=input.float)
+obM = input(1000.0, title="Overbought - monthly class", type=input.float)
+
+os = timeframe.ismonthly ? osM : timeframe.isweekly ? osW : osD
+ob = timeframe.ismonthly ? obM : timeframe.isweekly ? obW : obD
+
+//Plot
+// hline() only accepts a constant/input price, so timeframe-dependent levels are drawn with plot().
+plot(ob, title="Overbought", color=color.red, linewidth=1, style=plot.style_stepline)
+plot(os, title="Oversold", color=color.green, linewidth=1, style=plot.style_stepline)
+nvtsColor = nvts < os ? color.green : nvts > ob ? color.red : color.black
+plot(nvts, title="NVTS", color=nvtsColor, linewidth=2)
+
+//Alerts
+alertcondition(crossunder(nvts, os), title="NVTS entered oversold", message="NVTS crossed below the oversold level")
+alertcondition(crossover(nvts, ob), title="NVTS entered overbought", message="NVTS crossed above the overbought level")
