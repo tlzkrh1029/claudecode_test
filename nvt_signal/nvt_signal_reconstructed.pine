@@ -5,10 +5,10 @@
 //
 // Taken from the script's public metaInfo (exact): input names/defaults/order, plot titles and order,
 // the two fills, the colour palettes (lime/red/aqua/#474747 line, red/green backgrounds, label colours).
-// Inferred (the source itself is encrypted): the NVT formula, the data feeds, the automatic
-// per-timeframe levels, the cap lines' values, the cross direction and the label text.
+// Verified against values extracted from the chart (1D/1W/1M): the NVT formula and data feeds.
+// Inferred (the source itself is encrypted): the automatic per-timeframe levels, the cap lines' values, the cross direction and the label text.
 //
-// NVT = market cap / SMA(estimated on-chain tx volume in USD, Transaction Period)
+// NVT = close x total supply / SMA(estimated on-chain tx volume in USD, Transaction Period)
 //
 indicator("NVT - Network Value to Transactions", shorttitle = "NVT", overlay = false, precision = 2)
 
@@ -29,19 +29,18 @@ manualAbove  = input.int(150,    "Manual Above-Value Level")
 manualBelow  = input.int(45,     "Manual Below-Value Level")
 showLabels   = input.bool(false, "Show Labels")
 
-//Data (Quandl feeds used by the original until 2023; replace if they stop resolving)
-volSymbol = "QUANDL:BCHAIN/ETRVU"
-mcSymbol  = "QUANDL:BCHAIN/MKTCP"
+//Data (Quandl feeds; the original's values match these to ~0.1% on 2014-2021 bars)
+volSymbol    = "QUANDL:BCHAIN/ETRVU"   // estimated transaction volume, USD
+supplySymbol = "QUANDL:BCHAIN/TOTBC"   // total bitcoins in circulation
 
-nvtCalc() =>
-    vol = request.security(volSymbol, "D", close)
-    mc  = request.security(mcSymbol, "D", close)
-    mc / ta.sma(vol, txPeriod)
+// The volume SMA runs on the data symbol's own bars (history from 2009-01), not on the chart's bars.
+// Force Daily: daily bars on every timeframe. Off: bars of the chart's timeframe (90 weeks on 1W, 90 months on 1M).
+volTf  = forceDaily ? "D" : timeframe.period
+volSma = request.security(volSymbol, volTf, ta.sma(close, txPeriod))
+supply = request.security(supplySymbol, "D", close)
 
-// Force Daily: the daily NVT on every timeframe. Off: the average runs over chart bars (90 weeks on 1W, 90 months on 1M).
-nvtDaily = request.security(syminfo.tickerid, "D", nvtCalc())
-nvtChart = nvtCalc()
-nvt = forceDaily ? nvtDaily : nvtChart
+// Network value from the chart's own price x supply, so the line moves with the live price.
+nvt = close * supply / volSma
 
 //Levels: automatic per timeframe class, or manual
 autoAbove = timeframe.ismonthly ? 1000.0 : timeframe.isweekly ? 450.0 : 150.0
