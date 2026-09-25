@@ -43,5 +43,5 @@ NVTS = MKTCP / sma(ETRVU, N)   // N = 차트 봉 기준 길이, 기본값 90으�
 
 ## 파일
 
-- `nvt_signal_reconstructed.pine`: 두 번째 열 지표를 재구성한 Pine v4 코드입니다.
-- `nvt_candidates_diagnostic.pine`: 후보 공식 9개와 원본 대비 비율을 함께 표시하는 진단용 Pine v4 코드입니다.
+- `nvt_signal_reconstructed.pine`: 두 번째 열 지표를 재구성한 Pine v6 코드입니다.
+- `nvt_candidates_diagnostic.pine`: 후보 공식 9개와 원본 대비 비율을 함께 표시하는 진단용 Pine v6 코드입니다.
