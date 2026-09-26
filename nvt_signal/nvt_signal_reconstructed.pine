@@ -8,12 +8,18 @@
 // Verified bar by bar against values extracted from the chart (4H/1D/2D/5D/1W/2W/1M): the NVT formula
 // and data feeds, the per-timeframe levels, the cap lines, the line colours, the signal EMA, the cross
 // direction and position, and the label.
-// Not verified: Force Daily = true levels, Night Mode and the Highlight switches turned off, and why the
-// original starts on 2011-08-18 (reproduced here with a date condition).
+// Also verified (3rd pass): the price source is BITSTAMP:BTCUSD (equal to 10 significant digits on every
+// timeframe, which is also why the original starts on 2011-08-18), intraday and Force Daily charts take the
+// whole NVT from the daily series, Force Daily / Manual levels, Night Mode colours, and the Highlight switches.
+// From metaInfo only (not observable in plot values): alert titles/messages, input minimums, hidden styles,
+// label transparency. The alert conditions themselves are inferred from their titles.
 //
-// NVT = close x total supply / SMA(estimated on-chain tx volume in USD, Transaction Period)
+// Note: the QUANDL BCHAIN feeds stopped producing new bars after 2026-06-22. Since then NVT (original and this
+// script alike) is Bitstamp close x a constant, so recent readings follow price only.
 //
-indicator("NVT - Network Value to Transactions", shorttitle = "NVT", overlay = false, precision = 2)
+// NVT = Bitstamp close x total supply / SMA(estimated on-chain tx volume in USD, Transaction Period)
+//
+indicator("NVT - Network Value to Transactions", shorttitle = "NVT", overlay = false)
 
 //Inputs (same names, defaults and order as the original)
 nightMode    = input.bool(false, "Night Mode")
@@ -28,24 +34,24 @@ hiBottom     = input.bool(true,  "Highlight Bottom Areas")
 hiAboveBg    = input.bool(true,  "Highlight Above-Value Background")
 hiBelowBg    = input.bool(true,  "Highlight Below-Value Background")
 manualLevels = input.bool(false, "Manual Above/Below Value Levels")
-manualAbove  = input.int(150,    "Manual Above-Value Level")
-manualBelow  = input.int(45,     "Manual Below-Value Level")
+manualAbove  = input.int(150,    "Manual Above-Value Level", minval = 1)
+manualBelow  = input.int(45,     "Manual Below-Value Level", minval = 1)
 showLabels   = input.bool(false, "Show Labels")
 
-//Data (Quandl feeds; the original's values match these to ~0.1% on 2014-2021 bars)
+//Data (the original's values match these bit for bit on 1D and 1W)
+priceSymbol  = "BITSTAMP:BTCUSD"       // price; its history starts 2011-08-18, hence the original's first bar
 volSymbol    = "QUANDL:BCHAIN/ETRVU"   // estimated transaction volume, USD
 supplySymbol = "QUANDL:BCHAIN/TOTBC"   // total bitcoins in circulation
 
-// The volume SMA runs on the data symbol's own bars (history from 2009-01), not on the chart's bars.
-// Force Daily: daily bars on every timeframe. Off: bars of the chart's timeframe (90 weeks on 1W, 90 months on 1M).
-volTf  = forceDaily ? "D" : timeframe.period
-volSma = request.security(volSymbol, volTf, ta.sma(close, txPeriod))
-supply = request.security(supplySymbol, "D", close)
-
-// Network value from the chart's own price x supply, so the line moves with the live price.
-// The original shows nothing on bars that close on or before 2011-08-18.
-started = time_close > timestamp("UTC", 2011, 8, 18, 0, 0)
-nvt = started ? close * supply / volSma : na
+// Intraday charts and Force Daily take everything from daily bars (on intraday the value of a day appears on
+// that day's last bar; on 1W/1M with Force Daily it is the value of the period's last day).
+// Otherwise the chart's timeframe: the volume SMA runs on the data symbol's own bars (history from 2009-01),
+// i.e. 90 weeks on 1W and 90 months on 1M.
+dataTf  = forceDaily or timeframe.isintraday ? "D" : timeframe.period
+bsClose = request.security(priceSymbol, dataTf, close)
+volSma  = request.security(volSymbol, dataTf, ta.sma(close, txPeriod))
+supply  = request.security(supplySymbol, "D", close)
+nvt = bsClose * supply / volSma
 
 //Levels: automatic per timeframe class, or manual
 autoAbove = timeframe.ismonthly ? 1000.0 : timeframe.isweekly ? 450.0 : timeframe.isintraday ? 200.0 : 150.0
@@ -57,25 +63,32 @@ belowLevel = manualLevels ? float(manualBelow) : useAuto ? autoBelow : 45.0
 isAbove = nvt > aboveLevel
 isBelow = nvt < belowLevel
 
-//Background areas: level line to the 365-bar extreme, drawn only while NVT is beyond the level
-topCap = bar_index >= 364 ? ta.highest(nvt, 365) : aboveLevel * 1.1
-botCap = bar_index >= 364 ? ta.lowest(nvt, 365)  : belowLevel / 1.1
-pAbove  = plot(isAbove ? aboveLevel : na, "Above-Value Line", color = color.new(#808080, 100))
-pTopCap = plot(isAbove ? topCap     : na, "Top Capped Line",  color = color.new(#808080, 100))
-pBelow  = plot(isBelow ? belowLevel : na, "Below-Value Line", color = color.new(#808080, 100))
-pZero   = plot(isBelow ? botCap     : na, "Zero Capped Line", color = color.new(#808080, 100))
-fill(pAbove, pTopCap, color = hiAboveBg ? color.new(#FF0000, 90) : color.new(#FFFFFF, 100), title = "Above-Value Background")
-fill(pBelow, pZero,   color = hiBelowBg ? color.new(#008000, 90) : color.new(#FFFFFF, 100), title = "Below-Value Background")
+//Background areas: level line to the 365-bar extreme, drawn only while NVT is beyond the level and the
+//matching Highlight Background switch is on. ta.highest/ta.lowest skip na and must run on every bar.
+hi365  = ta.highest(nvt, 365)
+lo365  = ta.lowest(nvt, 365)
+topCap = bar_index >= 364 ? hi365 : aboveLevel * 1.1
+botCap = bar_index >= 364 ? lo365 : belowLevel / 1.1
+showTop = hiAboveBg and isAbove
+showBot = hiBelowBg and isBelow
+pAbove  = plot(showTop ? aboveLevel : na, "Above-Value Line", color = color.new(#808080, 100), editable = false)
+pTopCap = plot(showTop ? topCap     : na, "Top Capped Line",  color = color.new(#808080, 100), editable = false)
+pBelow  = plot(showBot ? belowLevel : na, "Below-Value Line", color = color.new(#808080, 100), editable = false)
+pZero   = plot(showBot ? botCap     : na, "Zero Capped Line", color = color.new(#808080, 100), editable = false)
+// Night Mode: both fill colours turn white on bars above the upper level (only the upper fill is visible there).
+nightTop = nightMode and isAbove
+fill(pAbove, pTopCap, color = nightTop ? color.new(#FFFFFF, 90) : color.new(#FF0000, 90), title = "Above-Value Background")
+fill(pBelow, pZero,   color = nightTop ? color.new(#FFFFFF, 90) : color.new(#008000, 90), title = "Below-Value Background")
 
 //NVT line: lime in the bottom area, red in the top area, dark grey (aqua in night mode) in between
 neutral  = nightMode ? #00FFFF : #474747
 nvtColor = hiBottom and isBelow ? #00FF00 : hiTop and isAbove ? #FF0000 : neutral
 plot(showNvt ? nvt : na, "NVT", color = nvtColor, linewidth = 3)
 
-//Label on the last bar
+//Label on the last bar (style transparency 30 in the original)
 labelText = nightMode ? #000000 : #FFFFFF
 plotshape(showLabels and barstate.islast ? nvt : na, "Shapes", style = shape.labelup, location = location.absolute,
-     color = neutral, textcolor = labelText, text = "NVT", size = size.tiny)
+     color = color.new(neutral, 30), textcolor = color.new(labelText, 30), text = "NVT", size = size.tiny, editable = false)
 
 //Signal line and crosses
 signal = ta.ema(nvt, signalLen)
@@ -84,3 +97,11 @@ bullCross = ta.crossover(nvt, signal)
 bearCross = ta.crossunder(nvt, signal)
 plot(showCrosses and bullCross ? signal : na, "Bullish Cross", color = color.new(#474747, 10), linewidth = 4, style = plot.style_circles)
 plot(showCrosses and bearCross ? signal : na, "Bearish Cross", color = color.new(#474747, 50), linewidth = 4, style = plot.style_circles)
+
+//Alerts (titles and messages from the original's metaInfo; conditions inferred from the titles)
+alertcondition(isAbove or isBelow, "1. Above/Below Value Condition", "NVT in Above/Below Value Condition!")
+alertcondition(isAbove, "1a. Above-Value Condition", "NVT in Above-Value Condition!")
+alertcondition(isBelow, "1b. Below-Value Condition", "NVT in Below-Value Condition!")
+alertcondition(bullCross or bearCross, "2. Signal Line Cross", "NVT Signal Line Cross!")
+alertcondition(bullCross, "2a. Bullish Signal Line Cross", "NVT Bullish Signal Line Cross!")
+alertcondition(bearCross, "2b. Bearish Signal Line Cross", "NVT Bearish Signal Line Cross!")
