@@ -5,8 +5,11 @@
 //
 // Taken from the script's public metaInfo (exact): input names/defaults/order, plot titles and order,
 // the two fills, the colour palettes (lime/red/aqua/#474747 line, red/green backgrounds, label colours).
-// Verified against values extracted from the chart (1D/1W/1M): the NVT formula and data feeds.
-// Inferred (the source itself is encrypted): the automatic per-timeframe levels, the cap lines' values, the cross direction and the label text.
+// Verified bar by bar against values extracted from the chart (4H/1D/2D/5D/1W/2W/1M): the NVT formula
+// and data feeds, the per-timeframe levels, the cap lines, the line colours, the signal EMA, the cross
+// direction and position, and the label.
+// Not verified: Force Daily = true levels, Night Mode and the Highlight switches turned off, and why the
+// original starts on 2011-08-18 (reproduced here with a date condition).
 //
 // NVT = close x total supply / SMA(estimated on-chain tx volume in USD, Transaction Period)
 //
@@ -40,11 +43,13 @@ volSma = request.security(volSymbol, volTf, ta.sma(close, txPeriod))
 supply = request.security(supplySymbol, "D", close)
 
 // Network value from the chart's own price x supply, so the line moves with the live price.
-nvt = close * supply / volSma
+// The original shows nothing on bars that close on or before 2011-08-18.
+started = time_close > timestamp("UTC", 2011, 8, 18, 0, 0)
+nvt = started ? close * supply / volSma : na
 
 //Levels: automatic per timeframe class, or manual
-autoAbove = timeframe.ismonthly ? 1000.0 : timeframe.isweekly ? 450.0 : 150.0
-autoBelow = timeframe.ismonthly ? 333.0  : timeframe.isweekly ? 100.0 : 45.0
+autoAbove = timeframe.ismonthly ? 1000.0 : timeframe.isweekly ? 450.0 : timeframe.isintraday ? 200.0 : 150.0
+autoBelow = timeframe.ismonthly ? 333.0  : timeframe.isweekly ? 100.0 : timeframe.isintraday ? 60.0  : 45.0
 useAuto   = not manualLevels and not forceDaily
 aboveLevel = manualLevels ? float(manualAbove) : useAuto ? autoAbove : 150.0
 belowLevel = manualLevels ? float(manualBelow) : useAuto ? autoBelow : 45.0
@@ -52,13 +57,15 @@ belowLevel = manualLevels ? float(manualBelow) : useAuto ? autoBelow : 45.0
 isAbove = nvt > aboveLevel
 isBelow = nvt < belowLevel
 
-//Background areas between invisible level lines and cap lines
-pAbove  = plot(aboveLevel, "Above-Value Line", color = color.new(#808080, 100))
-pTopCap = plot(math.max(nvt, aboveLevel), "Top Capped Line", color = color.new(#808080, 100))
-pBelow  = plot(belowLevel, "Below-Value Line", color = color.new(#808080, 100))
-pZero   = plot(math.min(nvt, belowLevel), "Zero Capped Line", color = color.new(#808080, 100))
-fill(pAbove, pTopCap, color = hiAboveBg and isAbove ? color.new(#FF0000, 90) : color.new(#FFFFFF, 100), title = "Above-Value Background")
-fill(pBelow, pZero,   color = hiBelowBg and isBelow ? color.new(#008000, 90) : color.new(#FFFFFF, 100), title = "Below-Value Background")
+//Background areas: level line to the 365-bar extreme, drawn only while NVT is beyond the level
+topCap = bar_index >= 364 ? ta.highest(nvt, 365) : aboveLevel * 1.1
+botCap = bar_index >= 364 ? ta.lowest(nvt, 365)  : belowLevel / 1.1
+pAbove  = plot(isAbove ? aboveLevel : na, "Above-Value Line", color = color.new(#808080, 100))
+pTopCap = plot(isAbove ? topCap     : na, "Top Capped Line",  color = color.new(#808080, 100))
+pBelow  = plot(isBelow ? belowLevel : na, "Below-Value Line", color = color.new(#808080, 100))
+pZero   = plot(isBelow ? botCap     : na, "Zero Capped Line", color = color.new(#808080, 100))
+fill(pAbove, pTopCap, color = hiAboveBg ? color.new(#FF0000, 90) : color.new(#FFFFFF, 100), title = "Above-Value Background")
+fill(pBelow, pZero,   color = hiBelowBg ? color.new(#008000, 90) : color.new(#FFFFFF, 100), title = "Below-Value Background")
 
 //NVT line: lime in the bottom area, red in the top area, dark grey (aqua in night mode) in between
 neutral  = nightMode ? #00FFFF : #474747
@@ -68,19 +75,12 @@ plot(showNvt ? nvt : na, "NVT", color = nvtColor, linewidth = 3)
 //Label on the last bar
 labelText = nightMode ? #000000 : #FFFFFF
 plotshape(showLabels and barstate.islast ? nvt : na, "Shapes", style = shape.labelup, location = location.absolute,
-     color = neutral, textcolor = labelText, text = "NVT")
+     color = neutral, textcolor = labelText, text = "NVT", size = size.tiny)
 
 //Signal line and crosses
 signal = ta.ema(nvt, signalLen)
 plot(showSignal ? signal : na, "Signal", color = #FF7F00)
 bullCross = ta.crossover(nvt, signal)
 bearCross = ta.crossunder(nvt, signal)
-plot(showCrosses and bullCross ? nvt : na, "Bullish Cross", color = color.new(#474747, 10), linewidth = 4, style = plot.style_circles)
-plot(showCrosses and bearCross ? nvt : na, "Bearish Cross", color = color.new(#474747, 50), linewidth = 4, style = plot.style_circles)
-
-//Alerts
-alertcondition(bullCross or bearCross, "Signal Line Cross", "NVT crossed its signal line")
-alertcondition(bullCross, "Bullish Signal Line Cross", "NVT crossed above its signal line")
-alertcondition(bearCross, "Bearish Signal Line Cross", "NVT crossed below its signal line")
-alertcondition(ta.crossover(nvt, aboveLevel), "OverBought", "NVT entered the above-value area")
-alertcondition(ta.crossunder(nvt, belowLevel), "OverSold", "NVT entered the below-value area")
+plot(showCrosses and bullCross ? signal : na, "Bullish Cross", color = color.new(#474747, 10), linewidth = 4, style = plot.style_circles)
+plot(showCrosses and bearCross ? signal : na, "Bearish Cross", color = color.new(#474747, 50), linewidth = 4, style = plot.style_circles)
