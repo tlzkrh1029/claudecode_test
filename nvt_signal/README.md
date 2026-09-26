@@ -35,11 +35,25 @@ NVT = BITSTAMP:BTCUSD 종가 × QUANDL:BCHAIN/TOTBC / SMA(QUANDL:BCHAIN/ETRVU, 9
 
 ## 한계와 주의 사항
 
-- **데이터 피드 중단**: `QUANDL:BCHAIN/ETRVU`와 `TOTBC`는 2026-06-22 이후 새 봉이 없습니다. 그 이후의 NVT는 원본과 재구성 코드 모두 "BITSTAMP 종가 × 상수"이므로, 최근 값은 가격만 반영합니다. TradingView 공식 레퍼런스에는 QUANDL 요청이 더 이상 유효하지 않다고 적혀 있으므로, 앞으로는 두 지표 모두 오류로 멈출 수 있습니다.
+- **데이터 피드 중단**: `QUANDL:BCHAIN/ETRVU`와 `TOTBC`는 2026-06-22 이후 새 봉이 없습니다. 새 `BCHAIN:ETRVU`, `BCHAIN:TOTBC`, `BCHAIN:MKTCP`는 이름만 다를 뿐 모든 봉에서 같은 데이터이고, 똑같이 멈춰 있어서 대체 피드가 되지 못합니다. 그 이후의 NVT는 원본과 재구성 코드 모두 "BITSTAMP 종가 × 상수"이므로, 최근 값은 가격만 반영합니다. TradingView 공식 레퍼런스에는 QUANDL 요청이 더 이상 유효하지 않다고 적혀 있으므로, 앞으로는 두 지표 모두 오류로 멈출 수 있습니다.
 - **최종 수정분의 차트 실행 여부**: 차트에서 완전 일치를 확인한 것은 Cowork가 만든 v4입니다. 최종 코드는 v4에 메타데이터 항목(알림 6개, 입력 최솟값, 숨김 스타일, 라벨 투명도, precision 제거)만 더했습니다. 이 추가분은 plot 값에 영향을 주지 않지만, 차트에서 다시 실행해 보지는 않았습니다.
 - **알림 조건**: 알림의 제목과 메시지는 메타데이터에서 가져왔지만, 조건식은 제목에서 추론했습니다. plot 값으로는 검증할 수 없습니다.
 - **검증하지 않은 경우**: INDEX:BTCUSD 이외의 차트(특히 USD가 아닌 차트), 틱 차트, 3M 이상의 월봉(이동평균이 계산되지 않아 값이 없음), Highlight 옵션을 하나만 끈 경우, Night Mode와 Highlight 옵션을 함께 바꾼 경우입니다.
 
+## 4열 지표 (같은 스크립트의 v2)
+
+4열은 같은 스크립트의 버전 2(2024-11-05)입니다. 작성자가 Quandl 대신 온체인 전송량을 쓰도록 바꾼 버전이며, `nvt_signal_v2_reconstructed.pine`으로 재구성했습니다.
+
+```
+NVT = GLASSNODE:BTC_MARKETCAP / SMA(GLASSNODE:BTC_TOTALVOLUMEUSD, Transaction Period)
+```
+
+- 두 값 모두 차트 시간 단위의 봉으로 가져옵니다. 1D 6,109봉, 1W 836봉, Transaction Period 30인 1D에서 모두 원본과 일치했습니다.
+- Glassnode 데이터는 약 2일 늦게 갱신되므로, 마지막 봉 몇 개는 같은 값이 반복됩니다.
+- 분모인 Glassnode 총 전송량은 blockchain.com 추정 거래량(ETRVU)보다 대체로 5~10배 큽니다. 그래서 값의 크기가 v1의 약 1/10이고, 45/150 같은 v1 기준선은 적용되지 않습니다.
+- 알림의 조건식과 메시지, `Force Daily View`의 동작은 추정입니다.
+
 ## 파일
 
-- `nvt_signal_reconstructed.pine`: 두 번째 열 지표를 재구성한 Pine v6 코드입니다.
+- `nvt_signal_reconstructed.pine`: 2열(v1)을 재구성한 Pine v6 코드입니다.
+- `nvt_signal_v2_reconstructed.pine`: 4열(v2)을 재구성한 Pine v6 코드입니다.
